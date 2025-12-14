@@ -1,0 +1,61 @@
+import mongoose from 'mongoose';
+
+const wageSchema = new mongoose.Schema(
+  {
+    clientId: {
+      type: String,
+      required: true,
+      index: true
+    },
+    employeeId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Employee',
+      required: true,
+    },
+    employeeName: {
+      type: String,
+      required: true,
+    },
+    advanceWage: {
+      type: Number,
+      default: 0,
+    },
+    totalWage: {
+      type: Number,
+      required: true,
+    },
+    balanceWage: {
+      type: Number,
+      default: function() {
+        return this.totalWage - this.advanceWage;
+      },
+    },
+    typeOfWork: {
+      type: String,
+      enum: ['boiling', 'splitting', 'other'],
+      required: true,
+    },
+    machineType: {
+      type: String,
+      enum: ['Electric', 'Manual', 'Hybrid'],
+      required: true,
+    },
+    date: {
+      type: Date,
+      default: Date.now,
+    },
+  },
+  {
+    timestamps: true,
+  }
+);
+
+// Update balanceWage before saving
+wageSchema.pre('save', function(next) {
+  this.balanceWage = this.totalWage - this.advanceWage;
+  next();
+});
+
+const Wage = mongoose.model('Wage', wageSchema);
+
+export default Wage;

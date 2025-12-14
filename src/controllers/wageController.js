@@ -1,0 +1,133 @@
+import Wage from '../models/wageModel.js';
+import asyncHandler from 'express-async-handler';
+
+// @desc    Create wage record
+// @route   POST /api/wages
+// @access  Private
+const createWage = asyncHandler(async (req, res) => {
+  const {
+    employeeId,
+    employeeName,
+    advanceWage,
+    totalWage,
+    typeOfWork,
+    machineType,
+    clientId,
+  } = req.body;
+
+  if (!clientId) {
+    res.status(400);
+    throw new Error('Client ID is required');
+  }
+
+  const wage = new Wage({
+    employeeId,
+    employeeName,
+    advanceWage: advanceWage || 0,
+    totalWage,
+    typeOfWork,
+    machineType,
+    clientId,
+  });
+
+  const createdWage = await wage.save();
+  res.status(201).json(createdWage);
+});
+
+// @desc    Get all wage records
+// @route   GET /api/wages
+// @access  Private
+const getWages = asyncHandler(async (req, res) => {
+  const { clientId, startDate, endDate } = req.query;
+  
+  if (!clientId) {
+    res.status(400);
+    throw new Error('Client ID is required');
+  }
+
+  const query = { clientId };
+  
+  // Add date filtering if startDate and/or endDate are provided
+  if (startDate || endDate) {
+    query.createdAt = {};
+    if (startDate) {
+      const startOfDay = new Date(startDate);
+      startOfDay.setHours(0, 0, 0, 0);
+      query.createdAt.$gte = startOfDay;
+    }
+    if (endDate) {
+      const endOfDay = new Date(endDate);
+      endOfDay.setHours(23, 59, 59, 999);
+      query.createdAt.$lte = endOfDay;
+    }
+  }
+
+  const wages = await Wage.find(query).populate('employeeId', 'name phoneNumber');
+  res.json(wages);
+});
+
+// @desc    Update wage record
+// @route   PUT /api/wages/:id
+// @access  Private
+const updateWage = asyncHandler(async (req, res) => {
+  const { advanceWage, totalWage, typeOfWork, machineType, clientId } = req.body;
+  
+  if (!clientId) {
+    res.status(400);
+    throw new Error('Client ID is required');
+  }
+
+  const wage = await Wage.findOne({ _id: req.params.id, clientId });
+  
+  if (!wage) {
+    res.status(404);
+    throw new Error('Wage record not found or does not belong to this client');
+  }
+
+  if (wage) {
+    wage.advanceWage = advanceWage !== undefined ? advanceWage : wage.advanceWage;
+    wage.totalWage = totalWage || wage.totalWage;
+    wage.typeOfWork = typeOfWork || wage.typeOfWork;
+    wage.machineType = machineType || wage.machineType;
+
+    const updatedWage = await wage.save();
+    res.json(updatedWage);
+  } else {
+    res.status(404);
+    throw new Error('Wage record not found');
+  }
+});
+
+// @desc    Delete wage record
+// @route   DELETE /api/wages/:id
+// @access  Private/Admin
+const deleteWage = asyncHandler(async (req, res) => {
+  const { clientId } = req.query;
+  
+  if (!clientId) {
+    res.status(400);
+    throw new Error('Client ID is required');
+  }
+
+  const wage = await Wage.findOne({ _id: req.params.id, clientId });
+  
+  if (!wage) {
+    res.status(404);
+    throw new Error('Wage record not found or does not belong to this client');
+  }
+
+  if (wage) {
+    await wage.deleteOne({ _id: req.params.id });
+    res.json({ message: 'Wage record removed' });
+  } else {
+    res.status(404);
+    throw new Error('Wage record not found');
+  }
+});
+
+export {
+  createWage,
+  getWages,
+  updateWage,
+  deleteWage,
+};
