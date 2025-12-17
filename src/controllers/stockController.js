@@ -37,7 +37,7 @@ const getStock = asyncHandler(async (req, res) => {
 // @route   PUT /api/stock/:id
 // @access  Private
 const updateStock = asyncHandler(async (req, res) => {
-  const { quantity, operation, clientId } = req.body;
+  const { quantity, clientId } = req.body;
   
   if (!clientId) {
     res.status(400);
@@ -50,18 +50,7 @@ const updateStock = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error('Stock item not found or does not belong to this client');
   }
-
-  if (operation === 'add') {
-    stockItem.availableQuantity += Number(quantity);
-  } else if (operation === 'subtract') {
-    if (stockItem.availableQuantity < quantity) {
-      res.status(400);
-      throw new Error('Insufficient stock available');
-    }
-    stockItem.availableQuantity -= Number(quantity);
-  } else {
-    stockItem.availableQuantity = Number(quantity);
-  }
+  stockItem.availableQuantity = quantity;
 
   const updatedStock = await stockItem.save();
   res.json(updatedStock);
@@ -71,7 +60,7 @@ const updateStock = asyncHandler(async (req, res) => {
 // @route   POST /api/stock
 // @access  Private/Admin
 const addStockItem = asyncHandler(async (req, res) => {
-  const { itemType, availableQuantity, unit, clientId } = req.body;
+  const { itemType, availableQuantity, clientId } = req.body;
 
   if (!clientId) {
     res.status(400);
