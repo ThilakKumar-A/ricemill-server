@@ -19,10 +19,6 @@ const stockSchema = new mongoose.Schema(
       default: 0,
       min: 0,
     },
-    unit: {
-      type: String,
-      default: 'Bags',
-    },
     lastUpdated: {
       type: Date,
       default: Date.now,

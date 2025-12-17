@@ -88,7 +88,6 @@ const addStockItem = asyncHandler(async (req, res) => {
   const stockItem = new Stock({
     itemType,
     availableQuantity: availableQuantity || 0,
-    unit: unit || 'kg',
     clientId,
   });
 
