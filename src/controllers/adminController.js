@@ -1,6 +1,12 @@
 import asyncHandler from 'express-async-handler';
 import generateToken from '../utils/generateToken.js';
 import Admin from '../models/adminModel.js';
+import Order from '../models/orderModel.js';
+import Sale from '../models/saleModel.js';
+import Wage from '../models/wageModel.js';
+import Expense from '../models/expenseModel.js';
+import Stock from '../models/stockModel.js';
+import Employee from '../models/employeeModel.js';
 
 // @desc    Create a new admin
 // @route   POST /api/admins
@@ -130,11 +136,367 @@ const getAdminProfile = asyncHandler(async (req, res) => {
   }
 });
 
+const getDashboard = asyncHandler(async (req, res) => {
+  const { clientId, startDate, endDate, year } = req.query;
+
+  if (!clientId) {
+    res.status(400);
+    throw new Error('Client ID is required');
+  }
+
+  const now = new Date();
+  const rangeStart = startDate
+    ? (() => {
+        const d = new Date(startDate);
+        d.setHours(0, 0, 0, 0);
+        return d;
+      })()
+    : new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+
+  const rangeEnd = endDate
+    ? (() => {
+        const d = new Date(endDate);
+        d.setHours(23, 59, 59, 999);
+        return d;
+      })()
+    : new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+
+  const createdAtFilter = { $gte: rangeStart, $lte: rangeEnd };
+
+  const orderMatch = { clientId };
+  const saleMatch = { clientId };
+  const wageMatch = { clientId };
+  const expenseMatch = { clientId };
+  orderMatch.createdAt = createdAtFilter;
+  saleMatch.createdAt = createdAtFilter;
+  wageMatch.createdAt = createdAtFilter;
+  expenseMatch.createdAt = createdAtFilter;
+
+  const normalizeItemType = (itemType) => {
+    if (!itemType) return 'other';
+    const t = String(itemType).toLowerCase();
+    if (t === 'others') return 'other';
+    return t;
+  };
+
+  const yearNumber = Number.parseInt(String(year || now.getFullYear()), 10);
+  const yearStart = new Date(yearNumber, 0, 1, 0, 0, 0, 0);
+  const yearEndExclusive = new Date(yearNumber + 1, 0, 1, 0, 0, 0, 0);
+
+  const [
+    paidOrderAgg,
+    processedOrderAgg,
+    paidSaleAgg,
+    salesByItemAgg,
+    wagesAgg,
+    expensesAgg,
+    salaryAgg,
+    yearPaidOrdersAgg,
+    yearPaidSalesAgg,
+    yearWagesAgg,
+    yearExpensesAgg,
+    yearSalesByItemAgg,
+    stockDocs,
+  ] = await Promise.all([
+    Order.aggregate([
+      {
+        $match: {
+          ...orderMatch,
+          status: 'PAID & CLOSE',
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          totalAmount: { $sum: '$totalAmount' },
+          totalBags: { $sum: '$numberOfBags' },
+          count: { $sum: 1 },
+        },
+      },
+    ]),
+    Order.aggregate([
+      { $match: orderMatch },
+      {
+        $group: {
+          _id: null,
+          totalBags: { $sum: '$numberOfBags' },
+          count: { $sum: 1 },
+        },
+      },
+    ]),
+    Sale.aggregate([
+      {
+        $match: {
+          ...saleMatch,
+          paymentStatus: 'Paid',
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          totalAmount: { $sum: '$totalAmount' },
+          count: { $sum: 1 },
+        },
+      },
+    ]),
+    Sale.aggregate([
+      {
+        $match: {
+          ...saleMatch,
+          paymentStatus: 'Paid',
+        },
+      },
+      { $unwind: '$items' },
+      {
+        $group: {
+          _id: '$items.itemType',
+          quantity: { $sum: '$items.quantity' },
+          amount: { $sum: '$items.amount' },
+        },
+      },
+    ]),
+    Wage.aggregate([
+      { $match: wageMatch },
+      {
+        $group: {
+          _id: null,
+          totalWage: { $sum: '$totalWage' },
+          count: { $sum: 1 },
+        },
+      },
+    ]),
+    Expense.aggregate([
+      { $match: expenseMatch },
+      {
+        $group: {
+          _id: null,
+          totalExpense: { $sum: '$amount' },
+          count: { $sum: 1 },
+        },
+      },
+    ]),
+    Employee.aggregate([
+      { $match: { clientId, isActive: true } },
+      {
+        $group: {
+          _id: null,
+          totalSalary: { $sum: '$salary' },
+          count: { $sum: 1 },
+        },
+      },
+    ]),
+    Order.aggregate([
+      {
+        $match: {
+          clientId,
+          status: 'PAID & CLOSE',
+          createdAt: { $gte: yearStart, $lt: yearEndExclusive },
+        },
+      },
+      {
+        $group: {
+          _id: { $month: '$createdAt' },
+          totalAmount: { $sum: '$totalAmount' },
+        },
+      },
+    ]),
+    Sale.aggregate([
+      {
+        $match: {
+          clientId,
+          paymentStatus: 'Paid',
+          createdAt: { $gte: yearStart, $lt: yearEndExclusive },
+        },
+      },
+      {
+        $group: {
+          _id: { $month: '$createdAt' },
+          totalAmount: { $sum: '$totalAmount' },
+        },
+      },
+    ]),
+    Wage.aggregate([
+      {
+        $match: {
+          clientId,
+          createdAt: { $gte: yearStart, $lt: yearEndExclusive },
+        },
+      },
+      {
+        $group: {
+          _id: { $month: '$createdAt' },
+          totalWage: { $sum: '$totalWage' },
+        },
+      },
+    ]),
+    Expense.aggregate([
+      {
+        $match: {
+          clientId,
+          createdAt: { $gte: yearStart, $lt: yearEndExclusive },
+        },
+      },
+      {
+        $group: {
+          _id: { $month: '$createdAt' },
+          totalExpense: { $sum: '$amount' },
+        },
+      },
+    ]),
+    Sale.aggregate([
+      {
+        $match: {
+          clientId,
+          paymentStatus: 'Paid',
+          createdAt: { $gte: yearStart, $lt: yearEndExclusive },
+        },
+      },
+      { $unwind: '$items' },
+      {
+        $group: {
+          _id: { month: { $month: '$createdAt' }, itemType: '$items.itemType' },
+          quantity: { $sum: '$items.quantity' },
+          amount: { $sum: '$items.amount' },
+        },
+      },
+    ]),
+    Stock.find({ clientId }).select('itemType availableQuantity'),
+  ]);
+
+  const paidOrders = paidOrderAgg?.[0] || { totalAmount: 0, totalBags: 0, count: 0 };
+  const processedOrders = processedOrderAgg?.[0] || { totalBags: 0, count: 0 };
+  const paidSales = paidSaleAgg?.[0] || { totalAmount: 0, count: 0 };
+  const wages = wagesAgg?.[0] || { totalWage: 0, count: 0 };
+  const expenses = expensesAgg?.[0] || { totalExpense: 0, count: 0 };
+  const salaries = salaryAgg?.[0] || { totalSalary: 0, count: 0 };
+
+  const salesByItemType = {
+    bran: { quantity: 0, amount: 0 },
+    husk: { quantity: 0, amount: 0 },
+    'black rice': { quantity: 0, amount: 0 },
+    'broken rice': { quantity: 0, amount: 0 },
+    other: { quantity: 0, amount: 0 },
+  };
+  for (const row of salesByItemAgg || []) {
+    const key = normalizeItemType(row._id);
+    if (!salesByItemType[key]) {
+      salesByItemType[key] = { quantity: 0, amount: 0 };
+    }
+    salesByItemType[key].quantity = row.quantity || 0;
+    salesByItemType[key].amount = row.amount || 0;
+  }
+
+  const stockByItemType = {
+    bran: 0,
+    husk: 0,
+    'black rice': 0,
+    'broken rice': 0,
+    other: 0,
+  };
+  for (const s of stockDocs || []) {
+    const key = normalizeItemType(s.itemType);
+    stockByItemType[key] = s.availableQuantity || 0;
+  }
+
+  const revenueOrders = paidOrders.totalAmount || 0;
+  const revenueSales = paidSales.totalAmount || 0;
+  const revenueTotal = revenueOrders + revenueSales;
+
+  const expenseWages = wages.totalWage || 0;
+  const expenseSalary = salaries.totalSalary || 0;
+  const expenseOther = expenses.totalExpense || 0;
+  const expenseTotal = expenseWages + expenseSalary + expenseOther;
+
+  const yearMonths = Array.from({ length: 12 }, (_, i) => {
+    const byItemType = {
+      bran: { quantity: 0, amount: 0 },
+      husk: { quantity: 0, amount: 0 },
+      'black rice': { quantity: 0, amount: 0 },
+      'broken rice': { quantity: 0, amount: 0 },
+      other: { quantity: 0, amount: 0 },
+    };
+
+    return {
+      month: i + 1,
+      revenue: { orders: 0, sales: 0, total: 0 },
+      expense: { wages: 0, salary: expenseSalary, other: 0, total: 0 },
+      profit: 0,
+      sales: { byItemType },
+    };
+  });
+
+  for (const row of yearPaidOrdersAgg || []) {
+    const idx = (row._id || 0) - 1;
+    if (yearMonths[idx]) yearMonths[idx].revenue.orders = row.totalAmount || 0;
+  }
+  for (const row of yearPaidSalesAgg || []) {
+    const idx = (row._id || 0) - 1;
+    if (yearMonths[idx]) yearMonths[idx].revenue.sales = row.totalAmount || 0;
+  }
+  for (const row of yearWagesAgg || []) {
+    const idx = (row._id || 0) - 1;
+    if (yearMonths[idx]) yearMonths[idx].expense.wages = row.totalWage || 0;
+  }
+  for (const row of yearExpensesAgg || []) {
+    const idx = (row._id || 0) - 1;
+    if (yearMonths[idx]) yearMonths[idx].expense.other = row.totalExpense || 0;
+  }
+  for (const row of yearSalesByItemAgg || []) {
+    const idx = (row._id?.month || 0) - 1;
+    const key = normalizeItemType(row._id?.itemType);
+    if (yearMonths[idx]?.sales?.byItemType?.[key]) {
+      yearMonths[idx].sales.byItemType[key].quantity = row.quantity || 0;
+      yearMonths[idx].sales.byItemType[key].amount = row.amount || 0;
+    } else if (yearMonths[idx]) {
+      yearMonths[idx].sales.byItemType[key] = {
+        quantity: row.quantity || 0,
+        amount: row.amount || 0,
+      };
+    }
+  }
+
+  for (const m of yearMonths) {
+    m.revenue.total = (m.revenue.orders || 0) + (m.revenue.sales || 0);
+    m.expense.total = (m.expense.wages || 0) + (m.expense.salary || 0) + (m.expense.other || 0);
+    m.profit = m.revenue.total - m.expense.total;
+  }
+
+  res.json({
+    revenue: {
+      orders: revenueOrders,
+      sales: revenueSales,
+      total: revenueTotal,
+    },
+    expense: {
+      wages: expenseWages,
+      salary: expenseSalary,
+      other: expenseOther,
+      total: expenseTotal,
+    },
+    profit: revenueTotal - expenseTotal,
+    paddyProcessed: {
+      totalBags: processedOrders.totalBags || 0,
+      paidBags: paidOrders.totalBags || 0,
+    },
+    sales: {
+      byItemType: salesByItemType,
+    },
+    stock: {
+      available: stockByItemType,
+    },
+    yearly: {
+      year: yearNumber,
+      months: yearMonths,
+    },
+  });
+});
+
 export { 
   createAdmin, 
   getAdmins, 
   deleteAdmin, 
   toggleAdminStatus, 
   authAdmin, 
-  getAdminProfile 
+  getAdminProfile,
+  getDashboard
 };

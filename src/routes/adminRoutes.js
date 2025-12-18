@@ -7,14 +7,16 @@ import {
   deleteAdmin,
   toggleAdminStatus,
   authAdmin,
-  getAdminProfile
+  getAdminProfile,
+  getDashboard
 } from '../controllers/adminController.js';
 
 // Public routes
 router.post('/login', authAdmin);
 
 // Protected routes
-router.get('/profile', protect, getAdminProfile);
+router.get('/dashboard', getDashboard);
+router.get('/profile', getAdminProfile);
 router.route('/')
   .post(createAdmin)
   .get(getAdmins);
