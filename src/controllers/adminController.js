@@ -183,6 +183,20 @@ const getDashboard = asyncHandler(async (req, res) => {
   const yearStart = new Date(yearNumber, 0, 1, 0, 0, 0, 0);
   const yearEndExclusive = new Date(yearNumber + 1, 0, 1, 0, 0, 0, 0);
 
+  // Check if a specific month is requested
+  const month = req.query.month ? Number.parseInt(req.query.month, 10) : null;
+  const monthFilter = month && month >= 1 && month <= 12 ? month : null;
+
+  // Create year match filter
+  const yearMatch = { clientId, createdAt: { $gte: yearStart, $lt: yearEndExclusive } };
+  
+  // If specific month is requested, filter to that month only
+  if (monthFilter) {
+    const monthStart = new Date(yearNumber, monthFilter - 1, 1, 0, 0, 0, 0);
+    const monthEnd = new Date(yearNumber, monthFilter, 0, 23, 59, 59, 999);
+    yearMatch.createdAt = { $gte: monthStart, $lte: monthEnd };
+  }
+
   const [
     paidOrderAgg,
     processedOrderAgg,
@@ -288,14 +302,13 @@ const getDashboard = asyncHandler(async (req, res) => {
     Order.aggregate([
       {
         $match: {
-          clientId,
+          ...yearMatch,
           status: 'PAID & CLOSE',
-          createdAt: { $gte: yearStart, $lt: yearEndExclusive },
         },
       },
       {
         $group: {
-          _id: { $month: '$createdAt' },
+          _id: monthFilter ? null : { $month: '$createdAt' },
           totalAmount: { $sum: '$totalAmount' },
         },
       },
@@ -303,42 +316,35 @@ const getDashboard = asyncHandler(async (req, res) => {
     Sale.aggregate([
       {
         $match: {
-          clientId,
+          ...yearMatch,
           paymentStatus: 'Paid',
-          createdAt: { $gte: yearStart, $lt: yearEndExclusive },
         },
       },
       {
         $group: {
-          _id: { $month: '$createdAt' },
+          _id: monthFilter ? null : { $month: '$createdAt' },
           totalAmount: { $sum: '$totalAmount' },
         },
       },
     ]),
     Wage.aggregate([
       {
-        $match: {
-          clientId,
-          createdAt: { $gte: yearStart, $lt: yearEndExclusive },
-        },
+        $match: yearMatch,
       },
       {
         $group: {
-          _id: { $month: '$createdAt' },
+          _id: monthFilter ? null : { $month: '$createdAt' },
           totalWage: { $sum: '$totalWage' },
         },
       },
     ]),
     Expense.aggregate([
       {
-        $match: {
-          clientId,
-          createdAt: { $gte: yearStart, $lt: yearEndExclusive },
-        },
+        $match: yearMatch,
       },
       {
         $group: {
-          _id: { $month: '$createdAt' },
+          _id: monthFilter ? null : { $month: '$createdAt' },
           totalExpense: { $sum: '$amount' },
         },
       },
@@ -346,15 +352,14 @@ const getDashboard = asyncHandler(async (req, res) => {
     Sale.aggregate([
       {
         $match: {
-          clientId,
+          ...yearMatch,
           paymentStatus: 'Paid',
-          createdAt: { $gte: yearStart, $lt: yearEndExclusive },
         },
       },
       { $unwind: '$items' },
       {
         $group: {
-          _id: { month: { $month: '$createdAt' }, itemType: '$items.itemType' },
+          _id: monthFilter ? '$items.itemType' : { month: { $month: '$createdAt' }, itemType: '$items.itemType' },
           quantity: { $sum: '$items.quantity' },
           amount: { $sum: '$items.amount' },
         },
@@ -407,7 +412,7 @@ const getDashboard = asyncHandler(async (req, res) => {
   const expenseOther = expenses.totalExpense || 0;
   const expenseTotal = expenseWages + expenseSalary + expenseOther;
 
-  const yearMonths = Array.from({ length: 12 }, (_, i) => {
+  const yearMonths = monthFilter ? null : Array.from({ length: 12 }, (_, i) => {
     const byItemType = {
       bran: { quantity: 0, amount: 0 },
       husk: { quantity: 0, amount: 0 },
@@ -425,6 +430,82 @@ const getDashboard = asyncHandler(async (req, res) => {
     };
   });
 
+  // Process yearly data
+  if (monthFilter) {
+    // Single month data - create one month entry
+    const singleMonthData = {
+      month: monthFilter,
+      revenue: { orders: 0, sales: 0, total: 0 },
+      expense: { wages: 0, salary: expenseSalary, other: 0, total: 0 },
+      profit: 0,
+      sales: { byItemType: {
+        bran: { quantity: 0, amount: 0 },
+        husk: { quantity: 0, amount: 0 },
+        'black rice': { quantity: 0, amount: 0 },
+        'broken rice': { quantity: 0, amount: 0 },
+        other: { quantity: 0, amount: 0 },
+      }},
+    };
+
+    // Set single month data from aggregations
+    if (yearPaidOrdersAgg?.[0]) {
+      singleMonthData.revenue.orders = yearPaidOrdersAgg[0].totalAmount || 0;
+    }
+    if (yearPaidSalesAgg?.[0]) {
+      singleMonthData.revenue.sales = yearPaidSalesAgg[0].totalAmount || 0;
+    }
+    if (yearWagesAgg?.[0]) {
+      singleMonthData.expense.wages = yearWagesAgg[0].totalWage || 0;
+    }
+    if (yearExpensesAgg?.[0]) {
+      singleMonthData.expense.other = yearExpensesAgg[0].totalExpense || 0;
+    }
+
+    // Process sales by item type for single month
+    for (const row of yearSalesByItemAgg || []) {
+      const key = normalizeItemType(row._id);
+      if (singleMonthData.sales.byItemType[key]) {
+        singleMonthData.sales.byItemType[key].quantity = row.quantity || 0;
+        singleMonthData.sales.byItemType[key].amount = row.amount || 0;
+      }
+    }
+
+    singleMonthData.revenue.total = (singleMonthData.revenue.orders || 0) + (singleMonthData.revenue.sales || 0);
+    singleMonthData.expense.total = (singleMonthData.expense.wages || 0) + (singleMonthData.expense.salary || 0) + (singleMonthData.expense.other || 0);
+    singleMonthData.profit = singleMonthData.revenue.total - singleMonthData.expense.total;
+
+    res.json({
+      revenue: {
+        orders: revenueOrders,
+        sales: revenueSales,
+        total: revenueTotal,
+      },
+      expense: {
+        wages: expenseWages,
+        salary: expenseSalary,
+        other: expenseOther,
+        total: expenseTotal,
+      },
+      profit: revenueTotal - expenseTotal,
+      paddyProcessed: {
+        totalBags: processedOrders.totalBags || 0,
+        paidBags: paidOrders.totalBags || 0,
+      },
+      sales: {
+        byItemType: salesByItemType,
+      },
+      stock: {
+        available: stockByItemType,
+      },
+      yearly: {
+        year: yearNumber,
+        months: [singleMonthData],
+      },
+    });
+    return;
+  }
+
+  // Original yearly processing for all months
   for (const row of yearPaidOrdersAgg || []) {
     const idx = (row._id || 0) - 1;
     if (yearMonths[idx]) yearMonths[idx].revenue.orders = row.totalAmount || 0;
