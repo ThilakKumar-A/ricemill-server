@@ -8,7 +8,7 @@ const wageSchema = new mongoose.Schema(
       index: true
     },
     employeeId: {
-      type: mongoose.Schema.Types.ObjectId,
+      type: String,
       ref: 'Employee',
       required: true,
     },
