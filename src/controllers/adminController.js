@@ -211,6 +211,10 @@ const getDashboard = asyncHandler(async (req, res) => {
     yearExpensesAgg,
     yearSalesByItemAgg,
     stockDocs,
+    initialStockingAgg,
+    boilingCompletedAgg,
+    splittingCompletedAgg,
+    packedReadyAgg,
   ] = await Promise.all([
     Order.aggregate([
       {
@@ -366,6 +370,66 @@ const getDashboard = asyncHandler(async (req, res) => {
       },
     ]),
     Stock.find({ clientId }).select('itemType availableQuantity'),
+    Order.aggregate([
+      {
+        $match: {
+          ...orderMatch,
+          status: 'INITIAL STOCKING',
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          totalBags: { $sum: '$numberOfBags' },
+          count: { $sum: 1 },
+        },
+      },
+    ]),
+    Order.aggregate([
+      {
+        $match: {
+          ...orderMatch,
+          status: 'BOILING PROCESS COMPLETED',
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          totalBags: { $sum: '$numberOfBags' },
+          count: { $sum: 1 },
+        },
+      },
+    ]),
+    Order.aggregate([
+      {
+        $match: {
+          ...orderMatch,
+          status: 'SPLITTING PROCESS COMPLETED',
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          totalBags: { $sum: '$numberOfBags' },
+          count: { $sum: 1 },
+        },
+      },
+    ]),
+    Order.aggregate([
+      {
+        $match: {
+          ...orderMatch,
+          status: 'PACKED & READY',
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          totalBags: { $sum: '$numberOfBags' },
+          count: { $sum: 1 },
+        },
+      },
+    ]),
   ]);
 
   const paidOrders = paidOrderAgg?.[0] || { totalAmount: 0, totalBags: 0, count: 0 };
@@ -374,6 +438,10 @@ const getDashboard = asyncHandler(async (req, res) => {
   const wages = wagesAgg?.[0] || { totalWage: 0, count: 0 };
   const expenses = expensesAgg?.[0] || { totalExpense: 0, count: 0 };
   const salaries = salaryAgg?.[0] || { totalSalary: 0, count: 0 };
+  const initialStocking = initialStockingAgg?.[0] || { totalBags: 0, count: 0 };
+  const boilingCompleted = boilingCompletedAgg?.[0] || { totalBags: 0, count: 0 };
+  const splittingCompleted = splittingCompletedAgg?.[0] || { totalBags: 0, count: 0 };
+  const packedReady = packedReadyAgg?.[0] || { totalBags: 0, count: 0 };
 
   const salesByItemType = {
     bran: { quantity: 0, amount: 0 },
@@ -497,6 +565,24 @@ const getDashboard = asyncHandler(async (req, res) => {
       stock: {
         available: stockByItemType,
       },
+      orderStatuses: {
+        initialStocking: {
+          totalBags: initialStocking.totalBags || 0,
+          count: initialStocking.count || 0,
+        },
+        boilingCompleted: {
+          totalBags: boilingCompleted.totalBags || 0,
+          count: boilingCompleted.count || 0,
+        },
+        splittingCompleted: {
+          totalBags: splittingCompleted.totalBags || 0,
+          count: splittingCompleted.count || 0,
+        },
+        packedReady: {
+          totalBags: packedReady.totalBags || 0,
+          count: packedReady.count || 0,
+        },
+      },
       yearly: {
         year: yearNumber,
         months: [singleMonthData],
@@ -564,6 +650,24 @@ const getDashboard = asyncHandler(async (req, res) => {
     },
     stock: {
       available: stockByItemType,
+    },
+    orderStatuses: {
+      initialStocking: {
+        totalBags: initialStocking.totalBags || 0,
+        count: initialStocking.count || 0,
+      },
+      boilingCompleted: {
+        totalBags: boilingCompleted.totalBags || 0,
+        count: boilingCompleted.count || 0,
+      },
+      splittingCompleted: {
+        totalBags: splittingCompleted.totalBags || 0,
+        count: splittingCompleted.count || 0,
+      },
+      packedReady: {
+        totalBags: packedReady.totalBags || 0,
+        count: packedReady.count || 0,
+      },
     },
     yearly: {
       year: yearNumber,
