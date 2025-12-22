@@ -56,7 +56,7 @@ const createSale = asyncHandler(async (req, res) => {
 
     if (stockItem.availableQuantity < item.quantity) {
       res.status(400);
-      throw new Error(`Insufficient stock for ${item.itemType}. Available: ${stockItem.quantity}`);
+      throw new Error(`Insufficient stock for ${item.itemType}. Available: ${stockItem.availableQuantity}`);
     }
 
     // Update stock quantity
@@ -164,7 +164,7 @@ const updateSale = asyncHandler(async (req, res) => {
 
       if (stockItem.availableQuantity < newItem.quantity) {
         res.status(400);
-        throw new Error(`Insufficient stock for ${newItem.itemType}. Available: ${stockItem.quantity}`);
+        throw new Error(`Insufficient stock for ${newItem.itemType}. Available: ${stockItem.availableQuantity}`);
       }
 
       stockItem.availableQuantity -= newItem.quantity;
