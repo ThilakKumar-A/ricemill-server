@@ -54,13 +54,13 @@ const createSale = asyncHandler(async (req, res) => {
       throw new Error(`Item type ${item.itemType} not found in stock`);
     }
 
-    if (stockItem.quantity < item.quantity) {
+    if (stockItem.availableQuantity < item.quantity) {
       res.status(400);
       throw new Error(`Insufficient stock for ${item.itemType}. Available: ${stockItem.quantity}`);
     }
 
     // Update stock quantity
-    stockItem.quantity -= item.quantity;
+    stockItem.availableQuantity -= item.quantity;
     await stockItem.save();
   }
 
@@ -162,12 +162,12 @@ const updateSale = asyncHandler(async (req, res) => {
         throw new Error(`Item type ${newItem.itemType} not found in stock`);
       }
 
-      if (stockItem.quantity < newItem.quantity) {
+      if (stockItem.availableQuantity < newItem.quantity) {
         res.status(400);
         throw new Error(`Insufficient stock for ${newItem.itemType}. Available: ${stockItem.quantity}`);
       }
 
-      stockItem.quantity -= newItem.quantity;
+      stockItem.availableQuantity -= newItem.quantity;
       await stockItem.save();
     }
 
